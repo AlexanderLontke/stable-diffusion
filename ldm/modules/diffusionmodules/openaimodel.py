@@ -78,6 +78,7 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
     """
 
     def forward(self, x, emb, context=None):
+        print("Shape of X in TES is:", x.shape)
         for layer in self:
             if isinstance(layer, TimestepBlock):
                 x = layer(x, emb)
