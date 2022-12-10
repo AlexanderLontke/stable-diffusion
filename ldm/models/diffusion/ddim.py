@@ -89,10 +89,11 @@ class DDIMSampler(object):
 
         self.make_schedule(ddim_num_steps=S, ddim_eta=eta, verbose=verbose)
         # sampling
-        size = (batch_size, *shape)
-        print(f'Data shape for DDIM sampling is {size}, eta {eta}')
+        print(f'Data shape for DDIM sampling is {shape}, eta {eta}')
 
-        samples, intermediates = self.ddim_sampling(conditioning, size,
+        samples, intermediates = self.ddim_sampling(conditioning,
+                                                    shape=shape,
+                                                    batch_size=batch_size,
                                                     callback=callback,
                                                     img_callback=img_callback,
                                                     quantize_denoised=quantize_x0,
@@ -110,14 +111,13 @@ class DDIMSampler(object):
         return samples, intermediates
 
     @torch.no_grad()
-    def ddim_sampling(self, cond, shape,
+    def ddim_sampling(self, cond, shape, batch_size,
                       x_T=None, ddim_use_original_steps=False,
                       callback=None, timesteps=None, quantize_denoised=False,
                       mask=None, x0=None, img_callback=None, log_every_t=100,
                       temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None,
                       unconditional_guidance_scale=1., unconditional_conditioning=None,):
         device = self.model.betas.device
-        b = shape[0]
         if x_T is None:
             img = torch.randn(shape, device=device)
         else:
@@ -138,7 +138,7 @@ class DDIMSampler(object):
 
         for i, step in enumerate(iterator):
             index = total_steps - i - 1
-            ts = torch.full((b,), step, device=device, dtype=torch.long)
+            ts = torch.full((batch_size,), step, device=device, dtype=torch.long)
 
             if mask is not None:
                 assert x0 is not None
