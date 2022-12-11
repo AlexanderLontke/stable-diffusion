@@ -119,7 +119,7 @@ class DDIMSampler(object):
                       unconditional_guidance_scale=1., unconditional_conditioning=None,):
         device = self.model.betas.device
         if x_T is None:
-            img = torch.randn(shape, device=device)
+            img = torch.randn((batch_size, *shape), device=device)
         else:
             img = x_T
 
