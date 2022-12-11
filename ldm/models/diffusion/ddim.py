@@ -169,6 +169,7 @@ class DDIMSampler(object):
 
         if unconditional_conditioning is None or unconditional_guidance_scale == 1.:
             e_t = self.model.apply_model(x, t, c)
+            print("E_t shape:", e_t.shape)
         else:
             x_in = torch.cat([x] * 2)
             t_in = torch.cat([t] * 2)
@@ -185,10 +186,11 @@ class DDIMSampler(object):
         sqrt_one_minus_alphas = self.model.sqrt_one_minus_alphas_cumprod if use_original_steps else self.ddim_sqrt_one_minus_alphas
         sigmas = self.model.ddim_sigmas_for_original_num_steps if use_original_steps else self.ddim_sigmas
         # select parameters corresponding to the currently considered timestep
-        a_t = torch.full((b, 1, 1, 1), alphas[index], device=device)
-        a_prev = torch.full((b, 1, 1, 1), alphas_prev[index], device=device)
-        sigma_t = torch.full((b, 1, 1, 1), sigmas[index], device=device)
-        sqrt_one_minus_at = torch.full((b, 1, 1, 1), sqrt_one_minus_alphas[index],device=device)
+        fill = ((len(x.shape)-1) * [1])
+        a_t = torch.full((b, *fill), alphas[index], device=device)
+        a_prev = torch.full((b, *fill), alphas_prev[index], device=device)
+        sigma_t = torch.full((b, *fill), sigmas[index], device=device)
+        sqrt_one_minus_at = torch.full((b, *fill), sqrt_one_minus_alphas[index],device=device)
 
         # current prediction for x_0
         pred_x0 = (x - sqrt_one_minus_at * e_t) / a_t.sqrt()
