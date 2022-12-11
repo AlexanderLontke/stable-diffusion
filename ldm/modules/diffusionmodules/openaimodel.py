@@ -78,7 +78,6 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
     """
 
     def forward(self, x, emb, context=None):
-        print("Shape of X in TES is:", x.shape)
         for layer in self:
             if isinstance(layer, TimestepBlock):
                 x = layer(x, emb)
@@ -727,7 +726,6 @@ class UNetModel(nn.Module):
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
             emb = emb + self.label_emb(y)
-        print("Size of X is:", x.shape)
         h = x.type(self.dtype)
         for module in self.input_blocks:
             h = module(h, emb, context)
