@@ -279,11 +279,8 @@ class SpatialTransformer(nn.Module):
 
 class PromptTransformer(nn.Module):
     """
-    Transformer block for image-like data.
-    First, project the input (aka embedding)
-    and reshape to b, t, d.
-    Then apply standard transformer action.
-    Finally, reshape to image
+    Transformer block for vector data.
+    Apply standard transformer action
     """
 
     def __init__(
@@ -306,14 +303,10 @@ class PromptTransformer(nn.Module):
         )
 
     def forward(self, x, context=None):
-        # note: if no context is given, cross-attention defaults to self-attention
-        # b, c, h, w = x.shape
         x_in = x
         x = self.norm(x)
-        # x = rearrange(x, 'b c h w -> b (h w) c')
-        # x = self.proj_in(x)
+
         for block in self.transformer_blocks:
             x = block(x, context=context)
-        # x = rearrange(x, 'b (h w) c -> b c h w', h=h, w=w)
-        # x = self.proj_out(x)
+
         return x + x_in

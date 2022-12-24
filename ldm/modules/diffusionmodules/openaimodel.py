@@ -479,20 +479,29 @@ class UNetModel(nn.Module):
         resblock_updown=False,
         use_new_attention_order=False,
         use_spatial_transformer=False,  # custom transformer support
+        use_prompt_transformer=False,  # support prompt incorporation of attention blocks for 1D data
         transformer_depth=1,  # custom transformer support
         context_dim=None,  # custom transformer support
         n_embed=None,  # custom support for prediction of discrete ids into codebook of first stage vq model
         legacy=True,
     ):
         super().__init__()
-        if use_spatial_transformer:
+        use_prompt = (use_spatial_transformer or use_prompt_transformer)
+        if use_prompt:
+            if use_prompt_transformer:
+                prompt_transformer_init_function = PromptTransformer
+            else:
+                prompt_transformer_init_function = SpatialTransformer
+        else:
+            prompt_transformer_init_function = None
+        if use_prompt:
             assert (
                 context_dim is not None
             ), "Fool!! You forgot to include the dimension of your cross-attention conditioning..."
 
         if context_dim is not None:
             assert (
-                use_spatial_transformer
+                use_prompt
             ), "Fool!! You forgot to use the spatial transformer for your cross-attention conditioning..."
             from omegaconf.listconfig import ListConfig
 
@@ -574,25 +583,28 @@ class UNetModel(nn.Module):
                         # num_heads = 1
                         dim_head = (
                             ch // num_heads
-                            if use_spatial_transformer
+                            if use_prompt
                             else num_head_channels
                         )
-                    layers.append(
-                        AttentionBlock(
-                            ch,
-                            use_checkpoint=use_checkpoint,
-                            num_heads=num_heads,
-                            num_head_channels=dim_head,
-                            use_new_attention_order=use_new_attention_order,
-                        )
-                        if not use_spatial_transformer
-                        else SpatialTransformer(
+
+                    if use_prompt:
+                        block_to_append = prompt_transformer_init_function(
                             ch,
                             num_heads,
                             dim_head,
                             depth=transformer_depth,
                             context_dim=context_dim,
                         )
+                    else:
+                        block_to_append = AttentionBlock(
+                            ch,
+                            use_checkpoint=use_checkpoint,
+                            num_heads=num_heads,
+                            num_head_channels=dim_head,
+                            use_new_attention_order=use_new_attention_order,
+                        )
+                    layers.append(
+                        block_to_append
                     )
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 self._feature_size += ch
@@ -629,7 +641,23 @@ class UNetModel(nn.Module):
             dim_head = num_head_channels
         if legacy:
             # num_heads = 1
-            dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
+            dim_head = ch // num_heads if use_prompt else num_head_channels
+        if use_prompt:
+            block_to_append = prompt_transformer_init_function(
+                ch,
+                num_heads,
+                dim_head,
+                depth=transformer_depth,
+                context_dim=context_dim,
+            )
+        else:
+            block_to_append = AttentionBlock(
+                ch,
+                use_checkpoint=use_checkpoint,
+                num_heads=num_heads,
+                num_head_channels=dim_head,
+                use_new_attention_order=use_new_attention_order,
+            )
         self.middle_block = TimestepEmbedSequential(
             ResBlock(
                 ch,
@@ -639,21 +667,7 @@ class UNetModel(nn.Module):
                 use_checkpoint=use_checkpoint,
                 use_scale_shift_norm=use_scale_shift_norm,
             ),
-            AttentionBlock(
-                ch,
-                use_checkpoint=use_checkpoint,
-                num_heads=num_heads,
-                num_head_channels=dim_head,
-                use_new_attention_order=use_new_attention_order,
-            )
-            if not use_spatial_transformer
-            else SpatialTransformer(
-                ch,
-                num_heads,
-                dim_head,
-                depth=transformer_depth,
-                context_dim=context_dim,
-            ),
+            block_to_append,
             ResBlock(
                 ch,
                 time_embed_dim,
@@ -691,25 +705,27 @@ class UNetModel(nn.Module):
                         # num_heads = 1
                         dim_head = (
                             ch // num_heads
-                            if use_spatial_transformer
+                            if use_prompt
                             else num_head_channels
                         )
-                    layers.append(
-                        AttentionBlock(
-                            ch,
-                            use_checkpoint=use_checkpoint,
-                            num_heads=num_heads_upsample,
-                            num_head_channels=dim_head,
-                            use_new_attention_order=use_new_attention_order,
-                        )
-                        if not use_spatial_transformer
-                        else SpatialTransformer(
+                    if use_prompt:
+                        block_to_append = prompt_transformer_init_function(
                             ch,
                             num_heads,
                             dim_head,
                             depth=transformer_depth,
                             context_dim=context_dim,
                         )
+                    else:
+                        block_to_append = AttentionBlock(
+                            ch,
+                            use_checkpoint=use_checkpoint,
+                            num_heads=num_heads_upsample,
+                            num_head_channels=dim_head,
+                            use_new_attention_order=use_new_attention_order,
+                        )
+                    layers.append(
+                        block_to_append
                     )
                 if level and i == num_res_blocks:
                     out_ch = ch
