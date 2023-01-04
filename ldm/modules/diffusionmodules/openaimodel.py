@@ -17,7 +17,7 @@ from ldm.modules.diffusionmodules.util import (
     normalization,
     timestep_embedding,
 )
-from ldm.modules.attention import SpatialTransformer, PromptTransformer
+from ldm.modules.attention import SpatialTransformer
 
 
 # dummy replace
@@ -84,9 +84,7 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
         for layer in self:
             if isinstance(layer, TimestepBlock):
                 x = layer(x, emb)
-            elif isinstance(layer, SpatialTransformer) or isinstance(
-                layer, PromptTransformer
-            ):
+            elif isinstance(layer, SpatialTransformer):
                 x = layer(x, context)
             else:
                 x = layer(x)
@@ -479,29 +477,21 @@ class UNetModel(nn.Module):
         resblock_updown=False,
         use_new_attention_order=False,
         use_spatial_transformer=False,  # custom transformer support
-        use_prompt_transformer=False,  # support prompt incorporation of attention blocks for 1D data
         transformer_depth=1,  # custom transformer support
         context_dim=None,  # custom transformer support
         n_embed=None,  # custom support for prediction of discrete ids into codebook of first stage vq model
         legacy=True,
     ):
         super().__init__()
-        use_prompt = (use_spatial_transformer or use_prompt_transformer)
-        if use_prompt:
-            if use_prompt_transformer:
-                prompt_transformer_init_function = PromptTransformer
-            else:
-                prompt_transformer_init_function = SpatialTransformer
-        else:
-            prompt_transformer_init_function = None
-        if use_prompt:
+
+        if use_spatial_transformer:
             assert (
                 context_dim is not None
             ), "Fool!! You forgot to include the dimension of your cross-attention conditioning..."
 
         if context_dim is not None:
             assert (
-                use_prompt
+                use_spatial_transformer
             ), "Fool!! You forgot to use the spatial transformer for your cross-attention conditioning..."
             from omegaconf.listconfig import ListConfig
 
@@ -583,12 +573,12 @@ class UNetModel(nn.Module):
                         # num_heads = 1
                         dim_head = (
                             ch // num_heads
-                            if use_prompt
+                            if use_spatial_transformer
                             else num_head_channels
                         )
 
-                    if use_prompt:
-                        block_to_append = prompt_transformer_init_function(
+                    if use_spatial_transformer:
+                        block_to_append = SpatialTransformer(
                             ch,
                             num_heads,
                             dim_head,
@@ -642,9 +632,9 @@ class UNetModel(nn.Module):
             dim_head = num_head_channels
         if legacy:
             # num_heads = 1
-            dim_head = ch // num_heads if use_prompt else num_head_channels
-        if use_prompt:
-            block_to_append = prompt_transformer_init_function(
+            dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
+        if use_spatial_transformer:
+            block_to_append = SpatialTransformer(
                 ch,
                 num_heads,
                 dim_head,
@@ -707,11 +697,11 @@ class UNetModel(nn.Module):
                         # num_heads = 1
                         dim_head = (
                             ch // num_heads
-                            if use_prompt
+                            if use_spatial_transformer
                             else num_head_channels
                         )
-                    if use_prompt:
-                        block_to_append = prompt_transformer_init_function(
+                    if use_spatial_transformer:
+                        block_to_append = SpatialTransformer(
                             ch,
                             num_heads,
                             dim_head,
