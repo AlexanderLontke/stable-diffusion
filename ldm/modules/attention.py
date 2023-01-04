@@ -167,8 +167,6 @@ class CrossAttention(nn.Module):
     def forward(self, x, context=None, mask=None):
         h = self.heads
         if context is not None:
-            print(f"X shape as it arrives: {x.shape}")
-            print(f"Context shape as it arrives: {context.shape}")
             if len(context.shape) == 2:
                 context = context[:, None, :]
         q = self.to_q(x)
@@ -177,18 +175,8 @@ class CrossAttention(nn.Module):
         v = self.to_v(context)
 
         # Reshape for attention heads
-        # if self.signal_dim == 1:
-        #     q, k, v = map(lambda t: rearrange(t, "b (h d) -> (b h) d", h=h), (q, k, v))
-        # elif self.signal_dim == 2:
-        #     q, k, v = map(lambda t: rearrange(t, "b (h d) -> (b h) d", h=h), (q, k, v))
-        # else:
-        #     raise NotImplementedError(
-        #         f"Rearrangement in Cross for signal dim: {self.signal_dim} has not been implemented"
-        #     )
-
-        print(f"Q: {q.shape}")
-        print(f"K: {k.shape}")
-        print(f"V: {v.shape}")
+        if self.signal_dim == 2:
+             q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h=h), (q, k, v))
 
         sim = einsum("b i d, b j d -> b i j", q, k) * self.scale
 
@@ -204,7 +192,8 @@ class CrossAttention(nn.Module):
         out = einsum("b i j, b j d -> b i d", attn, v)
 
         # Concatenate
-        # out = rearrange(out, "(b h) n d -> b n (h d)", h=h)
+        if self.signal_dim == 2:
+            out = rearrange(out, "(b h) n d -> b n (h d)", h=h)
         return self.to_out(out)
 
 
@@ -218,10 +207,12 @@ class BasicTransformerBlock(nn.Module):
         context_dim=None,
         gated_ff=True,
         checkpoint=True,
+        signal_dim: int = 2,
     ):
         super().__init__()
+        self.signal_dim = signal_dim
         self.attn1 = CrossAttention(
-            query_dim=dim, heads=n_heads, dim_head=d_head, dropout=dropout
+            query_dim=dim, heads=n_heads, dim_head=d_head, dropout=dropout, signal_dim=self.signal_dim,
         )  # is a self-attention
         self.ff = FeedForward(dim, dropout=dropout, glu=gated_ff)
         self.attn2 = CrossAttention(
@@ -230,11 +221,13 @@ class BasicTransformerBlock(nn.Module):
             heads=n_heads,
             dim_head=d_head,
             dropout=dropout,
+            signal_dim=self.signal_dim,
         )  # is self-attn if context is none
         self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
         self.norm3 = nn.LayerNorm(dim)
         self.checkpoint = checkpoint
+        self.sognal_dim = signal_dim
 
     def forward(self, x, context=None):
         return checkpoint(
@@ -274,7 +267,7 @@ class SpatialTransformer(nn.Module):
         self.transformer_blocks = nn.ModuleList(
             [
                 BasicTransformerBlock(
-                    inner_dim, n_heads, d_head, dropout=dropout, context_dim=context_dim
+                    inner_dim, n_heads, d_head, dropout=dropout, context_dim=context_dim, signal_dim=self.signal_dim
                 )
                 for _ in range(depth)
             ]
