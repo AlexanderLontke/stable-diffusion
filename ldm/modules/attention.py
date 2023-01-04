@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch import nn, einsum
 from einops import rearrange, repeat
 
-from ldm.modules.diffusionmodules.util import checkpoint
+from ldm.modules.diffusionmodules.util import checkpoint, conv_nd
 
 
 def exists(val):
@@ -147,11 +147,12 @@ class SpatialSelfAttention(nn.Module):
 
 
 class CrossAttention(nn.Module):
-    def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dropout=0.0):
+    def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dropout=0.0, signal_dim: int = 2):
         super().__init__()
         inner_dim = dim_head * heads
         context_dim = default(context_dim, query_dim)
 
+        self.signal_dim = signal_dim
         self.scale = dim_head ** -0.5
         self.heads = heads
 
@@ -165,13 +166,29 @@ class CrossAttention(nn.Module):
 
     def forward(self, x, context=None, mask=None):
         h = self.heads
-
+        if context is not None:
+            print(f"X shape as it arrives: {x.shape}")
+            print(f"Context shape as it arrives: {context.shape}")
+            if len(context.shape) == 2:
+                context = context[:, None, :]
         q = self.to_q(x)
         context = default(context, x)
         k = self.to_k(context)
         v = self.to_v(context)
 
-        q, k, v = map(lambda t: rearrange(t, "b n (h d) -> (b h) n d", h=h), (q, k, v))
+        # Reshape for attention heads
+        # if self.signal_dim == 1:
+        #     q, k, v = map(lambda t: rearrange(t, "b (h d) -> (b h) d", h=h), (q, k, v))
+        # elif self.signal_dim == 2:
+        #     q, k, v = map(lambda t: rearrange(t, "b (h d) -> (b h) d", h=h), (q, k, v))
+        # else:
+        #     raise NotImplementedError(
+        #         f"Rearrangement in Cross for signal dim: {self.signal_dim} has not been implemented"
+        #     )
+
+        print(f"Q: {q.shape}")
+        print(f"K: {k.shape}")
+        print(f"V: {v.shape}")
 
         sim = einsum("b i d, b j d -> b i j", q, k) * self.scale
 
@@ -185,7 +202,9 @@ class CrossAttention(nn.Module):
         attn = sim.softmax(dim=-1)
 
         out = einsum("b i j, b j d -> b i d", attn, v)
-        out = rearrange(out, "(b h) n d -> b n (h d)", h=h)
+
+        # Concatenate
+        # out = rearrange(out, "(b h) n d -> b n (h d)", h=h)
         return self.to_out(out)
 
 
@@ -239,14 +258,16 @@ class SpatialTransformer(nn.Module):
     """
 
     def __init__(
-        self, in_channels, n_heads, d_head, depth=1, dropout=0.0, context_dim=None
+        self, in_channels, n_heads, d_head, depth=1, dropout=0.0, context_dim=None, signal_dim: int = 2,
     ):
         super().__init__()
+        self.signal_dim = signal_dim
         self.in_channels = in_channels
         inner_dim = n_heads * d_head
         self.norm = Normalize(in_channels)
 
-        self.proj_in = nn.Conv2d(
+        self.proj_in = conv_nd(
+            self.signal_dim,
             in_channels, inner_dim, kernel_size=1, stride=1, padding=0
         )
 
@@ -255,24 +276,41 @@ class SpatialTransformer(nn.Module):
                 BasicTransformerBlock(
                     inner_dim, n_heads, d_head, dropout=dropout, context_dim=context_dim
                 )
-                for d in range(depth)
+                for _ in range(depth)
             ]
         )
 
         self.proj_out = zero_module(
-            nn.Conv2d(inner_dim, in_channels, kernel_size=1, stride=1, padding=0)
+            conv_nd(
+                self.signal_dim,
+                inner_dim, in_channels, kernel_size=1, stride=1, padding=0
+            )
         )
 
     def forward(self, x, context=None):
         # note: if no context is given, cross-attention defaults to self-attention
-        b, c, h, w = x.shape
         x_in = x
         x = self.norm(x)
         x = self.proj_in(x)
-        x = rearrange(x, "b c h w -> b (h w) c")
+        if self.signal_dim == 1:
+            x = rearrange(x, "b c h -> b h c")
+        elif self.signal_dim == 2:
+            x = rearrange(x, "b c h w -> b (h w) c")
+        else:
+            raise NotImplementedError(
+                f"Rearrangement in Attention Block for signal dim: {self.signal_dim} has not been implemented"
+            )
         for block in self.transformer_blocks:
             x = block(x, context=context)
-        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+        if self.signal_dim == 1:
+            x = rearrange(x, "b h c -> b c h")
+        elif self.signal_dim == 2:
+            b, c, h, w = x.shape
+            x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+        else:
+            raise NotImplementedError(
+                f"Rearrangement in Attention Block for signal dim: {self.signal_dim} has not been implemented"
+            )
         x = self.proj_out(x)
         return x + x_in
 

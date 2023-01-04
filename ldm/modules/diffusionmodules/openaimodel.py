@@ -594,6 +594,7 @@ class UNetModel(nn.Module):
                             dim_head,
                             depth=transformer_depth,
                             context_dim=context_dim,
+                            signal_dim=dims,
                         )
                     else:
                         block_to_append = AttentionBlock(
@@ -649,6 +650,7 @@ class UNetModel(nn.Module):
                 dim_head,
                 depth=transformer_depth,
                 context_dim=context_dim,
+                signal_dim=dims,
             )
         else:
             block_to_append = AttentionBlock(
@@ -715,6 +717,7 @@ class UNetModel(nn.Module):
                             dim_head,
                             depth=transformer_depth,
                             context_dim=context_dim,
+                            signal_dim=dims,
                         )
                     else:
                         block_to_append = AttentionBlock(
